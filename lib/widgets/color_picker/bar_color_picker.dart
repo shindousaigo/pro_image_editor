@@ -68,10 +68,10 @@ class BarColorPicker extends StatefulWidget {
   });
 
   @override
-  createState() => _BarColorPickerState();
+  createState() => BarColorPickerState();
 }
 
-class _BarColorPickerState extends State<BarColorPicker> {
+class BarColorPickerState extends State<BarColorPicker> {
   /// The current percentage position in the gradient.
   double percent = 0.0;
 
@@ -91,7 +91,6 @@ class _BarColorPickerState extends State<BarColorPicker> {
     switch (widget.pickMode) {
       case PickMode.color:
         colors = const [
-          Color(0xff000000),
           Color(0xffffffff),
           Color(0xffff0000),
           Color(0xffffff00),
@@ -99,22 +98,25 @@ class _BarColorPickerState extends State<BarColorPicker> {
           Color(0xff00ffff),
           Color(0xff0000ff),
           Color(0xffff00ff),
-          Color(0xffff0000),
+          Color(0xff000000),
         ];
         break;
       case PickMode.grey:
-        colors = const [Color(0xff000000), Color(0xffffffff)];
+        colors = const [Color(0xffffffff), Color(0xff000000)];
         break;
     }
 
     // Initialize 'percent' based on 'initPosition' or target 'initialColor'.
     percent = widget.initPosition ??
-        _estimateColorPositionInGradient(colors, widget.initialColor);
+        estimateColorPositionInGradient(null, widget.initialColor);
   }
 
   /// Estimates the position of a color within the gradient.
-  double _estimateColorPositionInGradient(
-      List<Color> gradientColors, Color targetColor) {
+  double estimateColorPositionInGradient(
+    List<Color>? gradientColors,
+    Color targetColor,
+  ) {
+    gradientColors ??= colors;
     double minDistance = double.infinity;
     double estimatedPosition = 0.0;
 
@@ -285,6 +287,7 @@ class _BarColorPickerState extends State<BarColorPicker> {
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      onTap: () {},
       onPanDown: (details) =>
           handleTouch(details.globalPosition, context, gradient),
       onPanStart: (details) =>

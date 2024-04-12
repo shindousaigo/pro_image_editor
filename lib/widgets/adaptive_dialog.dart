@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:pro_image_editor/utils/design_mode.dart';
+import 'package:GMD_IOT/pro_image_editor/utils/design_mode.dart';
 
 /// A dialog that adapts its appearance based on the design mode.
 class AdaptiveDialog extends StatefulWidget {

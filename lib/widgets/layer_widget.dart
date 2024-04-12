@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pro_image_editor/utils/theme_functions.dart';
+import 'package:GMD_IOT/pro_image_editor/utils/theme_functions.dart';
 import 'package:rounded_background_text/rounded_background_text.dart';
 
 import '../models/i18n/i18n.dart';
@@ -213,6 +213,7 @@ class _LayerWidgetState extends State<LayerWidget> {
   /// Build the content with possible transformations
   Widget _buildPosition() {
     Matrix4 transformMatrix = _calcTransformMatrix();
+    var cnt = _buildContent();
     return Container(
       transform: transformMatrix,
       transformAlignment: Alignment.center,
@@ -246,7 +247,17 @@ class _LayerWidgetState extends State<LayerWidget> {
               behavior: HitTestBehavior.translucent,
               onPointerDown: _onPointerDown,
               onPointerUp: _onPointerUp,
-              child: _buildContent(),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: _layer.isSelected
+                      ? Border.all(
+                          color: Color(0xffff0000),
+                          width: 2,
+                        )
+                      : null,
+                ),
+                child: cnt,
+              ),
             ),
           ),
         ),
@@ -288,8 +299,9 @@ class _LayerWidgetState extends State<LayerWidget> {
     var layer = _layer as TextLayerData;
     var style = TextStyle(
       fontSize: fontSize,
-      fontWeight: FontWeight.w400,
       color: layer.color,
+      fontFamily: layer.fontFamily,
+      fontWeight: layer.fontWeight,
     );
 
     double height = getLineHeight(style);

@@ -1,20 +1,22 @@
 import 'dart:math';
 
+import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:pro_image_editor/utils/design_mode.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rounded_background_text/rounded_background_text.dart';
 
-import '../models/custom_widgets.dart';
-import '../models/editor_configs/text_editor_configs.dart';
-import '../models/theme/theme.dart';
-import '../models/i18n/i18n.dart';
-import '../models/icons/icons.dart';
-import '../models/layer.dart';
-import '../widgets/color_picker/bar_color_picker.dart';
-import '../widgets/color_picker/color_picker_configs.dart';
-import '../widgets/layer_widget.dart';
-import '../widgets/platform_popup_menu.dart';
-import '../widgets/pro_image_editor_desktop_mode.dart';
+import 'package:GMD_IOT/pro_image_editor/models/custom_widgets.dart';
+import 'package:GMD_IOT/pro_image_editor/models/editor_configs/text_editor_configs.dart';
+import 'package:GMD_IOT/pro_image_editor/models/theme/theme.dart';
+import 'package:GMD_IOT/pro_image_editor/models/i18n/i18n.dart';
+import 'package:GMD_IOT/pro_image_editor/models/icons/icons.dart';
+import 'package:GMD_IOT/pro_image_editor/models/layer.dart';
+import 'package:GMD_IOT/pro_image_editor/utils/design_mode.dart';
+import 'package:GMD_IOT/pro_image_editor/widgets/color_picker/bar_color_picker.dart';
+import 'package:GMD_IOT/pro_image_editor/widgets/color_picker/color_picker_configs.dart';
+import 'package:GMD_IOT/pro_image_editor/widgets/layer_widget.dart';
+import 'package:GMD_IOT/pro_image_editor/widgets/platform_popup_menu.dart';
+import 'package:GMD_IOT/pro_image_editor/widgets/pro_image_editor_desktop_mode.dart';
 
 /// A StatefulWidget that provides a text editing interface for adding and editing text layers.
 class TextEditor extends StatefulWidget {
@@ -75,15 +77,33 @@ class TextEditor extends StatefulWidget {
 class TextEditorState extends State<TextEditor> {
   final TextEditingController _textCtrl = TextEditingController();
   final FocusNode _focus = FocusNode();
-  Color _primaryColor = Colors.black;
+
   late TextAlign align;
   late LayerBackgroundColorModeE backgroundColorMode;
   int _numLines = 0;
-  double _colorPosition = 0;
+
+  Color _primaryColor = Color(0xffff0000);
+  double _colorPosition = 0; // 100/7
+  List<String> fontFamilys = ["", "黑体", "宋体"];
+  late String fontFamily;
+  int fontIndex = 0;
+  bool isBold = false;
 
   @override
   void initState() {
     super.initState();
+
+    if (widget.layer?.fontFamily != null) {
+      fontFamily = widget.layer!.fontFamily;
+      fontIndex = fontFamilys.indexOf(fontFamily);
+    } else {
+      fontFamily = fontFamilys[fontIndex];
+    }
+
+    if (widget.layer?.fontWeight == FontWeight.bold) {
+      isBold = true;
+    }
+
     align = widget.configs.initialTextAlign;
     backgroundColorMode = widget.configs.initialBackgroundColorMode;
     _initializeFromLayer();
@@ -194,6 +214,8 @@ class TextEditorState extends State<TextEditor> {
           align: align,
           colorMode: backgroundColorMode,
           colorPickerPosition: _colorPosition,
+          fontFamily: fontFamily,
+          fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
         ),
       );
     } else {
@@ -259,6 +281,148 @@ class TextEditorState extends State<TextEditor> {
                   onPressed: toggleBackgroundMode,
                   icon: Icon(widget.icons.textEditor.backgroundMode),
                 ),
+              IconButton(
+                onPressed: () {
+                  fontIndex = (fontIndex + 1) % fontFamilys.length;
+                  fontFamily = fontFamilys[fontIndex];
+                  setState(() {});
+                },
+                icon: Container(
+                  width: 27,
+                  height: 23,
+                  child: Stack(
+                    children: [
+                      Container(
+                        margin: EdgeInsets.fromLTRB(0, 3, 0, 0),
+                        child: new SvgPicture.asset(
+                          'assets/xiaoming/font.svg',
+                          colorFilter: ColorFilter.mode(
+                            Color.fromARGB(255, 225, 223, 225),
+                            BlendMode.srcIn,
+                          ),
+                          width: 16,
+                          height: 16,
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        child: Container(
+                          child: Text(
+                            ["默", "黑", "宋"][fontIndex],
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  isBold = !isBold;
+                  setState(() {});
+                },
+                icon: Container(
+                  child: new SvgPicture.asset(
+                    isBold
+                        ? 'assets/xiaoming/bold_on.svg'
+                        : 'assets/xiaoming/bold_off.svg',
+                    colorFilter: ColorFilter.mode(
+                      Color.fromARGB(255, 225, 223, 225),
+                      BlendMode.srcIn,
+                    ),
+                    width: 19,
+                    height: 19,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () async {
+                  final Color newColor = await showColorPickerDialog(
+                    context,
+                    _primaryColor,
+                    title: Text(
+                      '',
+                      // style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    width: 40,
+                    height: 40,
+                    spacing: 0,
+                    runSpacing: 0,
+                    borderRadius: 0,
+                    // wheelDiameter: 250,
+                    // enableOpacity: true,
+                    enableTonalPalette: true,
+                    showColorCode: true,
+                    colorCodeHasColor: true,
+                    // showColorValue: true,
+                    pickersEnabled: <ColorPickerType, bool>{
+                      ColorPickerType.both: false,
+                      ColorPickerType.primary: false,
+                      ColorPickerType.accent: false,
+                      ColorPickerType.bw: false,
+                      ColorPickerType.custom: false,
+                      ColorPickerType.wheel: true,
+                    },
+                    copyPasteBehavior: const ColorPickerCopyPasteBehavior(
+                      // copyButton: true,
+                      // pasteButton: true,
+                      longPressMenu: true,
+                    ),
+                    actionButtons: const ColorPickerActionButtons(
+                      closeButton: false,
+                      okButton: true,
+                      dialogActionButtons: false,
+                    ),
+                    transitionBuilder: (
+                      BuildContext context,
+                      Animation<double> a1,
+                      Animation<double> a2,
+                      Widget widget,
+                    ) {
+                      final double curvedValue =
+                          Curves.easeInOutBack.transform(a1.value) - 1.0;
+                      return Transform(
+                        transform: Matrix4.translationValues(
+                          0.0,
+                          curvedValue * 200,
+                          0.0,
+                        ),
+                        child: Opacity(
+                          opacity: a1.value,
+                          child: widget,
+                        ),
+                      );
+                    },
+                    transitionDuration: Duration(milliseconds: 300),
+                    constraints: BoxConstraints(
+                      // minHeight: 480,
+                      // minWidth: MediaQuery.of(context).size.width * 0.86,
+                      maxWidth: MediaQuery.of(context).size.width * 0.98,
+                    ),
+                  );
+                  setState(() {
+                    _primaryColor = newColor;
+                    var percent = barColorPickerState.currentState
+                        ?.estimateColorPositionInGradient(null, newColor);
+                    barColorPickerState.currentState?.percent = percent!;
+                  });
+                },
+                icon: Container(
+                  child: new SvgPicture.asset(
+                    'assets/xiaoming/font_color.svg',
+                    colorFilter: ColorFilter.mode(
+                      Color.fromARGB(255, 225, 223, 225),
+                      BlendMode.srcIn,
+                    ),
+                    width: 21,
+                    height: 21,
+                  ),
+                ),
+              ),
               const Spacer(),
               _buildDoneBtn(),
             ] else ...[
@@ -315,6 +479,9 @@ class TextEditorState extends State<TextEditor> {
     );
   }
 
+  GlobalKey<BarColorPickerState> barColorPickerState =
+      GlobalKey<BarColorPickerState>();
+
   /// Builds the body of the text editor.
   Widget _buildBody() {
     return GestureDetector(
@@ -328,6 +495,7 @@ class TextEditorState extends State<TextEditor> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: BarColorPicker(
+                key: barColorPickerState,
                 length: min(
                   350,
                   MediaQuery.of(context).size.height -
@@ -339,7 +507,6 @@ class TextEditorState extends State<TextEditor> {
                 onPositionChange: (value) {
                   _colorPosition = value;
                 },
-                initPosition: _colorPosition,
                 initialColor: _primaryColor,
                 horizontal: false,
                 thumbColor: Colors.white,
@@ -382,9 +549,11 @@ class TextEditorState extends State<TextEditor> {
                       style: TextStyle(
                         color: _getTextColor,
                         fontSize: widget.configs.initFontSize,
-                        fontWeight: FontWeight.w400,
                         height: 1.35,
                         letterSpacing: 0,
+                        fontFamily: fontFamily,
+                        fontWeight:
+                            isBold ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ),

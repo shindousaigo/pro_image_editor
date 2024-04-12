@@ -2,11 +2,15 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:io';
 
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:get/get.dart';
+import 'package:GMD_IOT/view/item/MyToast.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pro_image_editor/modules/sticker_editor.dart';
+import 'package:GMD_IOT/pro_image_editor/modules/sticker_editor.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:vibration/vibration.dart';
 
@@ -29,7 +33,7 @@ import 'widgets/layer_widget.dart';
 import 'widgets/loading_dialog.dart';
 import 'widgets/pro_image_editor_desktop_mode.dart';
 
-typedef ImageEditingCompleteCallback = Future<void> Function(Uint8List bytes);
+typedef ImageEditingCompleteCallback = Future<void> Function(Uint8List? bytes);
 
 /// A widget for image editing using ProImageEditor.
 ///
@@ -273,6 +277,9 @@ class ProImageEditorState extends State<ProImageEditor> {
   /// Getter for the active layer currently being edited.
   Layer get _activeLayer => _layers[_selectedLayer];
 
+  Layer? get _hasSelectedLayer =>
+      _layers.firstWhereOrNull((layer) => layer.isSelected);
+
   /// Temporary layer used during editing.
   Layer? _tempLayer;
 
@@ -281,6 +288,9 @@ class ProImageEditorState extends State<ProImageEditor> {
 
   /// Index of the selected layer.
   int _selectedLayer = -1;
+
+  bool _hasSelected = false;
+  bool _showConsole = false;
 
   /// Flag indicating if the editor has been initialized.
   bool _inited = false;
@@ -385,7 +395,8 @@ class ProImageEditorState extends State<ProImageEditor> {
 
   /// Getter for the Y-coordinate of the middle of the screen.
   double get _screenMiddleY =>
-      _screen.height / 2 - (_screenPadding.top + _screenPadding.bottom) / 2;
+      (_screen.height - _screenPadding.top - _screenPadding.bottom) / 2 -
+      kToolbarHeight;
 
   /// Last recorded X-axis position for layers.
   LayerLastPosition _lastPositionX = LayerLastPosition.center;
@@ -434,6 +445,8 @@ class ProImageEditorState extends State<ProImageEditor> {
       _browserContextMenuBeforeEnabled = BrowserContextMenu.enabled;
       BrowserContextMenu.disableContextMenu();
     }
+
+    // openCropEditor();
   }
 
   @override
@@ -593,6 +606,7 @@ class ProImageEditorState extends State<ProImageEditor> {
   ///
   /// This method removes a layer from the editor and updates the editing state.
   void _removeLayer(int layerPos, {Layer? layer}) {
+    quitEdit();
     _cleanForwardChanges();
     var layers = List<Layer>.from(_layers.map((e) => _copyLayer(e)));
     layers.removeAt(layerPos);
@@ -690,6 +704,9 @@ class ProImageEditorState extends State<ProImageEditor> {
       scale: layer.scale,
       flipX: layer.flipX,
       flipY: layer.flipY,
+      fontFamily: layer.fontFamily,
+      fontWeight: layer.fontWeight,
+      isSelected: layer.isSelected,
     );
   }
 
@@ -704,6 +721,7 @@ class ProImageEditorState extends State<ProImageEditor> {
       scale: layer.scale,
       flipX: layer.flipX,
       flipY: layer.flipY,
+      isSelected: layer.isSelected,
     );
   }
 
@@ -733,6 +751,7 @@ class ProImageEditorState extends State<ProImageEditor> {
       flipY: layer.flipY,
       item: layer.item.copy(),
       rawSize: layer.rawSize,
+      isSelected: layer.isSelected,
     );
   }
 
@@ -811,6 +830,7 @@ class ProImageEditorState extends State<ProImageEditor> {
     if (_selectedLayer < 0) return;
 
     _enabledHitDetection = false;
+
     if (detail.pointerCount == 1) {
       if (_activeScale) return;
       _freeStyleHighPerformanceMoving =
@@ -932,6 +952,7 @@ class ProImageEditorState extends State<ProImageEditor> {
 
       _scaleDebounce(() => _activeScale = false);
     }
+
     setState(() {});
     widget.onUpdateUI?.call();
   }
@@ -1094,19 +1115,23 @@ class ProImageEditorState extends State<ProImageEditor> {
       _setTempLayer(layerData);
       TextLayerData textLayer = _layers[i] as TextLayerData;
       textLayer
-        ..text = layer.text
-        ..background = layer.background
-        ..color = layer.color
-        ..colorMode = layer.colorMode
-        ..colorPickerPosition = layer.colorPickerPosition
-        ..align = layer.align
-        ..id = layerData.id
-        ..flipX = layerData.flipX
-        ..flipY = layerData.flipY
-        ..offset = layerData.offset
-        ..opacity = layerData.opacity
-        ..scale = layerData.scale
-        ..rotation = layerData.rotation;
+            ..text = layer.text
+            ..background = layer.background
+            ..color = layer.color
+            ..colorMode = layer.colorMode
+            ..colorPickerPosition = layer.colorPickerPosition
+            ..align = layer.align
+            ..id = layerData.id
+            ..flipX = layerData.flipX
+            ..flipY = layerData.flipY
+            ..offset = layerData.offset
+            ..opacity = layerData.opacity
+            ..scale = layerData.scale
+            ..rotation = layerData.rotation
+            ..fontFamily = layer.fontFamily
+            ..fontWeight = layer.fontWeight
+          //
+          ;
 
       _updateTempLayer();
     }
@@ -1137,7 +1162,6 @@ class ProImageEditorState extends State<ProImageEditor> {
         customWidgets: widget.configs.customWidgets,
         layerFontSize: widget.configs.textEditorConfigs.initFontSize,
         configs: widget.configs.paintEditorConfigs,
-        stickerInitWidth: widget.configs.stickerEditorConfigs?.initWidth ?? 100,
         paddingHelper: EdgeInsets.only(
           top: (_screen.height -
                       _screenPadding.top -
@@ -1476,6 +1500,8 @@ class ProImageEditorState extends State<ProImageEditor> {
     }
   }
 
+  var isCapturing = false;
+
   /// Complete the editing process and return the edited image.
   ///
   /// This function is called when the user is done editing the image. If no changes have been made
@@ -1486,8 +1512,11 @@ class ProImageEditorState extends State<ProImageEditor> {
   /// Before returning the edited image, a loading dialog is displayed to indicate that the operation
   /// is in progress.
   void doneEditing() async {
+    quitEdit();
+
     if (_editPosition <= 0 && _layers.isEmpty) {
-      return Navigator.pop(context);
+      await widget.onImageEditingComplete(null);
+      return;
     }
     _doneEditing = true;
     LoadingDialog loading = LoadingDialog()
@@ -1500,8 +1529,9 @@ class ProImageEditorState extends State<ProImageEditor> {
         imageEditorTheme: widget.configs.imageEditorTheme,
       );
 
+    isCapturing = true;
     var bytes = await _screenshotCtrl.capture(pixelRatio: _pixelRatio);
-
+    isCapturing = false;
     if (bytes != null) {
       await widget.onImageEditingComplete(bytes);
     }
@@ -1514,6 +1544,11 @@ class ProImageEditorState extends State<ProImageEditor> {
   /// This function allows the user to close the image editor without saving any changes or edits.
   /// It navigates back to the previous screen or closes the modal editor.
   void closeEditor() {
+    if (_showConsole) {
+      _showConsole = false;
+      setState(() {});
+      return;
+    }
     if (_editPosition <= 0) {
       Navigator.pop(context);
     } else {
@@ -1615,12 +1650,14 @@ class ProImageEditorState extends State<ProImageEditor> {
   }
 
   /// Get the screen padding values.
-  EdgeInsets get screenPaddingHelper => EdgeInsets.only(
+  EdgeInsets get screenPaddingHelper => // EdgeInsets.zero;
+      EdgeInsets.only(
         top: (_screen.height -
-                _screenPadding.top -
-                _screenPadding.bottom -
-                _imageHeight) /
-            2,
+                    _screenPadding.top -
+                    _screenPadding.bottom -
+                    _imageHeight) /
+                2 -
+            kToolbarHeight,
         left: (_screen.width -
                 _screenPadding.left -
                 _screenPadding.right -
@@ -1670,12 +1707,20 @@ class ProImageEditorState extends State<ProImageEditor> {
           child: Theme(
             data: _theme,
             child: SafeArea(
-              child: Scaffold(
-                backgroundColor: widget.configs.imageEditorTheme.background,
-                resizeToAvoidBottomInset: false,
-                appBar: _buildAppBar(),
-                body: _buildBody(),
-                bottomNavigationBar: _buildBottomNavBar(),
+              child: PopScope(
+                canPop: false,
+                onPopInvoked: (didPop) {
+                  if (!didPop) {
+                    closeEditor();
+                  }
+                },
+                child: Scaffold(
+                  backgroundColor: widget.configs.imageEditorTheme.background,
+                  resizeToAvoidBottomInset: false,
+                  appBar: _buildAppBar(),
+                  body: _buildBody(),
+                  bottomNavigationBar: _buildBottomNavBar(),
+                ),
               ),
             ),
           ),
@@ -1684,55 +1729,233 @@ class ProImageEditorState extends State<ProImageEditor> {
     );
   }
 
-  PreferredSizeWidget? _buildAppBar() {
-    return _selectedLayer >= 0
-        ? null
-        : widget.configs.customWidgets.appBar ??
-            AppBar(
-              automaticallyImplyLeading: false,
-              foregroundColor: Colors.white,
-              backgroundColor: Colors.black,
-              actions: [
-                IconButton(
-                  tooltip: widget.configs.i18n.cancel,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  icon: Icon(widget.configs.icons.closeEditor),
-                  onPressed: closeEditor,
+  var textLeftCtrl = TextEditingController();
+  var textTopCtrl = TextEditingController();
+  var textScaleCtrl = TextEditingController();
+  var textRotationCtrl = TextEditingController();
+
+  Widget _showConsoleIconButton({
+    required String text,
+    required String key,
+    required TextEditingController textCtrl,
+    required String Function() getTextCtrl,
+    required void Function(double val) confirm,
+  }) {
+    return IconButton(
+      key: ValueKey(key),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      icon: Text(
+        text,
+        style: TextStyle(
+          fontSize: 16,
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      onPressed: () async {
+        textCtrl.text = getTextCtrl();
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              content: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.6,
                 ),
-                const Spacer(),
-                IconButton(
-                  key: const ValueKey('TextEditorMainUndoButton'),
-                  tooltip: widget.configs.i18n.undo,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  icon: Icon(
-                    widget.configs.icons.undoAction,
-                    color: _editPosition > 0
-                        ? Colors.white
-                        : Colors.white.withAlpha(80),
+                child: Container(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: TextField(
+                    keyboardType: TextInputType.number,
+                    controller: textCtrl,
+                    decoration: InputDecoration(
+                      labelText: text,
+                    ),
+                    autofocus: true,
                   ),
-                  onPressed: undoAction,
                 ),
-                IconButton(
-                  key: const ValueKey('TextEditorMainRedoButton'),
-                  tooltip: widget.configs.i18n.redo,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  icon: Icon(
-                    widget.configs.icons.redoAction,
-                    color: _editPosition < _changes.length - 1
-                        ? Colors.white
-                        : Colors.white.withAlpha(80),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    var val = double.tryParse(textCtrl.text);
+                    if (val != null) {
+                      confirm(val);
+                    }
+                  },
+                  child: const Text(
+                    '确认',
                   ),
-                  onPressed: redoAction,
-                ),
-                IconButton(
-                  tooltip: widget.configs.i18n.done,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  icon: Icon(widget.configs.icons.doneIcon),
-                  iconSize: 28,
-                  onPressed: doneEditing,
                 ),
               ],
             );
+          },
+        );
+      },
+    );
+  }
+
+  PreferredSizeWidget? _buildAppBar() {
+    return widget.configs.customWidgets.appBar ??
+        AppBar(
+          automaticallyImplyLeading: false,
+          foregroundColor: Colors.white,
+          backgroundColor: Colors.black,
+          actions: _selectedLayer >= 0
+              ? [
+                  _buildRemoveIcon(),
+                  const Spacer(),
+                ]
+              : [
+                  IconButton(
+                    tooltip: widget.configs.i18n.cancel,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    icon: Icon(widget.configs.icons.closeEditor),
+                    onPressed: closeEditor,
+                  ),
+                  const Spacer(),
+                  if (_showConsole)
+                    _showConsoleIconButton(
+                      text: '左侧',
+                      key: 'TextEditorMainConsoleLeft',
+                      textCtrl: textLeftCtrl,
+                      getTextCtrl: () {
+                        return '${(_hasSelectedLayer!.offset.dx / _imageWidth * 100).toStringAsFixed(2)}';
+                      },
+                      confirm: (val) {
+                        var _val = val / 100 * _imageWidth;
+                        _hasSelectedLayer!.offset = Offset(
+                          _val,
+                          _hasSelectedLayer!.offset.dy,
+                        );
+                        setState(() {});
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  if (_showConsole)
+                    _showConsoleIconButton(
+                      text: '上测',
+                      key: 'TextEditorMainConsoleTop',
+                      textCtrl: textTopCtrl,
+                      getTextCtrl: () {
+                        return '${(_hasSelectedLayer!.offset.dy / _imageHeight * 100).toStringAsFixed(2)}';
+                      },
+                      confirm: (val) {
+                        var _val = val / 100 * _imageHeight;
+                        _hasSelectedLayer!.offset = Offset(
+                          _hasSelectedLayer!.offset.dx,
+                          _val,
+                        );
+                        setState(() {});
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  if (_showConsole)
+                    _showConsoleIconButton(
+                      text: '缩放',
+                      key: 'TextEditorMainConsoleScale',
+                      textCtrl: textScaleCtrl,
+                      getTextCtrl: () {
+                        return '${(_hasSelectedLayer!.scale * 100).toStringAsFixed(2)}';
+                      },
+                      confirm: (val) {
+                        var _val = val / 100;
+                        _hasSelectedLayer!.scale = _val;
+                        setState(() {});
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  if (_showConsole)
+                    _showConsoleIconButton(
+                      text: '旋转',
+                      key: 'TextEditorMainConsoleRotatation',
+                      textCtrl: textRotationCtrl,
+                      getTextCtrl: () {
+                        return '${(_hasSelectedLayer!.rotation * 180 / pi).round() % 360}';
+                      },
+                      confirm: (val) {
+                        var _val = val % 360 * pi / 180;
+                        _hasSelectedLayer!.rotation = _val;
+                        setState(() {});
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  if (_showConsole)
+                    Container(
+                      key: const ValueKey('TextEditorMainConsoleSpace'),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      color: Colors.transparent,
+                      width: 16,
+                    ),
+                  if (!_showConsole)
+                    IconButton(
+                      key: const ValueKey('TextEditorMainConsole'),
+                      tooltip: widget.configs.i18n.undo,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      icon: new SvgPicture.asset(
+                        'assets/xiaoming/image_editor_console.svg',
+                        colorFilter: ColorFilter.mode(
+                          _hasSelected
+                              ? Colors.white
+                              : Colors.white.withAlpha(80),
+                          BlendMode.srcIn,
+                        ),
+                        width: 20,
+                        height: 20,
+                      ),
+                      onPressed: () async {
+                        if (!_hasSelected) {
+                          MyToast.showToast(
+                            text: '请先选择图层',
+                            context: context,
+                          );
+                          return;
+                        }
+                        _showConsole = true;
+                        setState(() {});
+                      },
+                    ),
+                  if (!_showConsole)
+                    IconButton(
+                      key: const ValueKey('TextEditorMainUndoButton'),
+                      tooltip: widget.configs.i18n.undo,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      icon: Icon(
+                        widget.configs.icons.undoAction,
+                        color: _editPosition > 0
+                            ? Colors.white
+                            : Colors.white.withAlpha(80),
+                      ),
+                      onPressed: undoAction,
+                    ),
+                  if (!_showConsole)
+                    IconButton(
+                      key: const ValueKey('TextEditorMainRedoButton'),
+                      tooltip: widget.configs.i18n.redo,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      icon: Icon(
+                        widget.configs.icons.redoAction,
+                        color: _editPosition < _changes.length - 1
+                            ? Colors.white
+                            : Colors.white.withAlpha(80),
+                      ),
+                      onPressed: redoAction,
+                    ),
+                  if (!_showConsole)
+                    IconButton(
+                      tooltip: widget.configs.i18n.done,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      icon: Icon(widget.configs.icons.doneIcon),
+                      iconSize: 28,
+                      onPressed: doneEditing,
+                    ),
+                ],
+        );
   }
 
   Widget _buildBody() {
@@ -1755,6 +1978,14 @@ class ProImageEditorState extends State<ProImageEditor> {
           fit: StackFit.expand,
           clipBehavior: Clip.none,
           children: [
+            Container(
+              color: Colors.transparent,
+              child: GestureDetector(
+                onTap: () {
+                  quitEdit();
+                },
+              ),
+            ),
             Hero(
               tag: !_inited ? '--' : widget.configs.heroTag,
               child: Center(
@@ -1762,28 +1993,31 @@ class ProImageEditorState extends State<ProImageEditor> {
                   height: _imageHeight,
                   width: _imageWidth,
                   child: StreamBuilder<bool>(
-                      stream: _mouseMoveStream.stream,
-                      initialData: false,
-                      builder: (context, snapshot) {
-                        return MouseRegion(
-                          hitTestBehavior: HitTestBehavior.translucent,
-                          cursor: snapshot.data != true
-                              ? SystemMouseCursors.basic
-                              : widget
-                                  .configs.imageEditorTheme.layerHoverCursor,
-                          onHover: isDesktop
-                              ? (event) {
-                                  var hasHit = _layers.indexWhere((element) =>
-                                          element is PaintingLayerData &&
-                                          element.item.hit) >=
-                                      0;
-                                  if (hasHit != snapshot.data) {
-                                    _mouseMoveStream.add(hasHit);
-                                  }
+                    stream: _mouseMoveStream.stream,
+                    initialData: false,
+                    builder: (context, snapshot) {
+                      return MouseRegion(
+                        hitTestBehavior: HitTestBehavior.translucent,
+                        cursor: snapshot.data != true
+                            ? SystemMouseCursors.basic
+                            : widget.configs.imageEditorTheme.layerHoverCursor,
+                        onHover: isDesktop
+                            ? (event) {
+                                var hasHit = _layers.indexWhere((element) =>
+                                        element is PaintingLayerData &&
+                                        element.item.hit) >=
+                                    0;
+                                if (hasHit != snapshot.data) {
+                                  _mouseMoveStream.add(hasHit);
                                 }
-                              : null,
-                          child: Screenshot(
-                            controller: _screenshotCtrl,
+                              }
+                            : null,
+                        child: Screenshot(
+                          controller: _screenshotCtrl,
+                          child: GestureDetector(
+                            onTap: () {
+                              quitEdit();
+                            },
                             child: Stack(
                               alignment: Alignment.center,
                               clipBehavior: Clip.none,
@@ -1792,20 +2026,91 @@ class ProImageEditorState extends State<ProImageEditor> {
                                   offstage: !_inited,
                                   child: editorImage,
                                 ),
-                                if (_selectedLayer < 0) _buildLayers(),
+                                if (isCapturing)
+                                  _buildLayers(padding: EdgeInsets.zero),
                               ],
                             ),
                           ),
-                        );
-                      }),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
+
             // show same image solong decoding that screenshot is ready
             if (!_inited) editorImage,
-            if (_selectedLayer >= 0) _buildLayers(),
+            // if (_selectedLayer >= 0) _buildLayers(),
+            _buildLayers(),
             _buildHelperLines(),
-            if (_selectedLayer >= 0) _buildRemoveIcon(),
+            // if (_selectedLayer >= 0) _buildRemoveIcon(),
+            if (_hasSelectedLayer != null && _showConsole)
+              Positioned(
+                top: 0,
+                // bottom: ((_screen.height - _screenPadding.top - _screenPadding.bottom - maxHeight) / 2 - kToolbarHeight) + maxHeight,
+                left: 0,
+                right: 0,
+                child: Container(
+                  color: Colors.transparent,
+                  padding: EdgeInsets.fromLTRB(16, 0, 0, 0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        height: 16,
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            '左测: ${(_hasSelectedLayer!.offset.dx / _imageWidth * 100).toStringAsFixed(2)}%',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 24,
+                          ),
+                          Text(
+                            '上测: ${(_hasSelectedLayer!.offset.dy / _imageHeight * 100).toStringAsFixed(2)}%',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            '缩放: ${(_hasSelectedLayer!.scale * 100).toStringAsFixed(2)}%',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 24,
+                          ),
+                          Text(
+                            '旋转: ${(_hasSelectedLayer!.rotation * 180 / pi).round() % 360}°',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1816,142 +2121,145 @@ class ProImageEditorState extends State<ProImageEditor> {
     var bottomTextStyle = const TextStyle(fontSize: 10.0, color: Colors.white);
     double bottomIconSize = 22.0;
 
-    return _selectedLayer >= 0
-        ? null
-        : widget.configs.customWidgets.bottomNavigationBar ??
-            Theme(
-              data: _theme,
-              child: Scrollbar(
-                controller: _bottomBarScrollCtrl,
-                scrollbarOrientation: ScrollbarOrientation.top,
-                thickness: isDesktop ? null : 0,
-                child: BottomAppBar(
-                  height: kToolbarHeight,
-                  color: Colors.black,
-                  padding: EdgeInsets.zero,
-                  child: Center(
-                    child: SingleChildScrollView(
-                      controller: _bottomBarScrollCtrl,
-                      scrollDirection: Axis.horizontal,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minWidth: min(_screen.width, 500),
-                          maxWidth: 500,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              if (widget.configs.paintEditorConfigs.enabled)
-                                FlatIconTextButton(
-                                  key: const ValueKey(
-                                      'open-painting-editor-btn'),
-                                  label: Text(
-                                      widget.configs.i18n.paintEditor
-                                          .bottomNavigationBarText,
-                                      style: bottomTextStyle),
-                                  icon: Icon(
-                                    widget.configs.icons.paintingEditor
-                                        .bottomNavBar,
-                                    size: bottomIconSize,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: openPaintingEditor,
-                                ),
-                              if (widget.configs.textEditorConfigs.enabled)
-                                FlatIconTextButton(
-                                  key: const ValueKey('open-text-editor-btn'),
-                                  label: Text(
-                                      widget.configs.i18n.textEditor
-                                          .bottomNavigationBarText,
-                                      style: bottomTextStyle),
-                                  icon: Icon(
-                                    widget
-                                        .configs.icons.textEditor.bottomNavBar,
-                                    size: bottomIconSize,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: openTextEditor,
-                                ),
-                              if (widget
-                                  .configs.cropRotateEditorConfigs.enabled)
-                                FlatIconTextButton(
-                                  key: const ValueKey(
-                                      'open-crop-rotate-editor-btn'),
-                                  label: Text(
-                                      widget.configs.i18n.cropRotateEditor
-                                          .bottomNavigationBarText,
-                                      style: bottomTextStyle),
-                                  icon: Icon(
-                                    widget.configs.icons.cropRotateEditor
-                                        .bottomNavBar,
-                                    size: bottomIconSize,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: openCropEditor,
-                                ),
-                              if (widget.configs.filterEditorConfigs.enabled)
-                                FlatIconTextButton(
-                                  key: const ValueKey('open-filter-editor-btn'),
-                                  label: Text(
-                                      widget.configs.i18n.filterEditor
-                                          .bottomNavigationBarText,
-                                      style: bottomTextStyle),
-                                  icon: Icon(
-                                    widget.configs.icons.filterEditor
-                                        .bottomNavBar,
-                                    size: bottomIconSize,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: openFilterEditor,
-                                ),
-                              if (widget.configs.emojiEditorConfigs.enabled)
-                                FlatIconTextButton(
-                                  key: const ValueKey('open-emoji-editor-btn'),
-                                  label: Text(
-                                      widget.configs.i18n.emojiEditor
-                                          .bottomNavigationBarText,
-                                      style: bottomTextStyle),
-                                  icon: Icon(
-                                    widget
-                                        .configs.icons.emojiEditor.bottomNavBar,
-                                    size: bottomIconSize,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: openEmojiEditor,
-                                ),
-                              if (widget
-                                      .configs.stickerEditorConfigs?.enabled ==
-                                  true)
-                                FlatIconTextButton(
-                                  key:
-                                      const ValueKey('open-sticker-editor-btn'),
-                                  label: Text(
-                                      widget.configs.i18n.stickerEditor
-                                          .bottomNavigationBarText,
-                                      style: bottomTextStyle),
-                                  icon: Icon(
-                                    widget.configs.icons.stickerEditor
-                                        .bottomNavBar,
-                                    size: bottomIconSize,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: openStickerEditor,
-                                ),
-                            ],
-                          ),
-                        ),
+    return widget.configs.customWidgets.bottomNavigationBar ??
+        // (_selectedLayer >= 0
+        //     ? null
+        //     :
+        Theme(
+          data: _theme,
+          child: Scrollbar(
+            controller: _bottomBarScrollCtrl,
+            scrollbarOrientation: ScrollbarOrientation.top,
+            thickness: isDesktop ? null : 0,
+            child: BottomAppBar(
+              height: kToolbarHeight,
+              color: Colors.black,
+              padding: EdgeInsets.zero,
+              child: Center(
+                child: SingleChildScrollView(
+                  controller: _bottomBarScrollCtrl,
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: min(_screen.width, 500),
+                      maxWidth: 500,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          if (widget.configs.paintEditorConfigs.enabled)
+                            FlatIconTextButton(
+                              key: const ValueKey('open-painting-editor-btn'),
+                              label: Text(
+                                  widget.configs.i18n.paintEditor
+                                      .bottomNavigationBarText,
+                                  style: bottomTextStyle),
+                              icon: Icon(
+                                widget
+                                    .configs.icons.paintingEditor.bottomNavBar,
+                                size: bottomIconSize,
+                                color: Colors.white,
+                              ),
+                              onPressed: openPaintingEditor,
+                            ),
+                          if (widget.configs.textEditorConfigs.enabled)
+                            FlatIconTextButton(
+                              key: const ValueKey('open-text-editor-btn'),
+                              label: Text(
+                                  widget.configs.i18n.textEditor
+                                      .bottomNavigationBarText,
+                                  style: bottomTextStyle),
+                              icon: Icon(
+                                widget.configs.icons.textEditor.bottomNavBar,
+                                size: bottomIconSize,
+                                color: Colors.white,
+                              ),
+                              onPressed: openTextEditor,
+                            ),
+                          if (widget.configs.cropRotateEditorConfigs.enabled)
+                            FlatIconTextButton(
+                              key:
+                                  const ValueKey('open-crop-rotate-editor-btn'),
+                              label: Text(
+                                  widget.configs.i18n.cropRotateEditor
+                                      .bottomNavigationBarText,
+                                  style: bottomTextStyle),
+                              icon: Icon(
+                                widget.configs.icons.cropRotateEditor
+                                    .bottomNavBar,
+                                size: bottomIconSize,
+                                color: Colors.white,
+                              ),
+                              onPressed: openCropEditor,
+                            ),
+                          if (widget.configs.filterEditorConfigs.enabled)
+                            FlatIconTextButton(
+                              key: const ValueKey('open-filter-editor-btn'),
+                              label: Text(
+                                  widget.configs.i18n.filterEditor
+                                      .bottomNavigationBarText,
+                                  style: bottomTextStyle),
+                              icon: Icon(
+                                widget.configs.icons.filterEditor.bottomNavBar,
+                                size: bottomIconSize,
+                                color: Colors.white,
+                              ),
+                              onPressed: openFilterEditor,
+                            ),
+                          if (widget.configs.emojiEditorConfigs.enabled)
+                            FlatIconTextButton(
+                              key: const ValueKey('open-emoji-editor-btn'),
+                              label: Text(
+                                  widget.configs.i18n.emojiEditor
+                                      .bottomNavigationBarText,
+                                  style: bottomTextStyle),
+                              icon: Icon(
+                                widget.configs.icons.emojiEditor.bottomNavBar,
+                                size: bottomIconSize,
+                                color: Colors.white,
+                              ),
+                              onPressed: openEmojiEditor,
+                            ),
+                          if (widget.configs.stickerEditorConfigs?.enabled ==
+                              true)
+                            FlatIconTextButton(
+                              key: const ValueKey('open-sticker-editor-btn'),
+                              label: Text(
+                                  widget.configs.i18n.stickerEditor
+                                      .bottomNavigationBarText,
+                                  style: bottomTextStyle),
+                              icon: Icon(
+                                widget.configs.icons.stickerEditor.bottomNavBar,
+                                size: bottomIconSize,
+                                color: Colors.white,
+                              ),
+                              onPressed: openStickerEditor,
+                            ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
-            );
+            ),
+          ),
+        );
+    // );
   }
 
-  Widget _buildLayers() {
+  quitEdit() {
+    _hasSelected = false;
+    _showConsole = false;
+    _layers.forEach((layer) {
+      layer.isSelected = false;
+    });
+    setState(() {});
+  }
+
+  Widget _buildLayers({padding}) {
     int loopHelper = 0;
     return Stack(
       children: _layers.map((layerItem) {
@@ -1961,7 +2269,8 @@ class ProImageEditorState extends State<ProImageEditor> {
         return LayerWidget(
           key: ValueKey('${layerItem.id}-$i'),
           layerHoverCursor: widget.configs.imageEditorTheme.layerHoverCursor,
-          padding: _selectedLayer < 0 ? EdgeInsets.zero : screenPaddingHelper,
+          // _selectedLayer < 0 ? EdgeInsets.zero : screenPaddingHelper,
+          padding: padding != null ? padding : screenPaddingHelper,
           layerData: layerItem,
           textFontSize: widget.configs.textEditorConfigs.initFontSize,
           emojiTextStyle: widget.configs.emojiEditorConfigs.textStyle,
@@ -1972,9 +2281,28 @@ class ProImageEditorState extends State<ProImageEditor> {
           stickerInitWidth:
               widget.configs.stickerEditorConfigs?.initWidth ?? 100,
           onTap: (layer) async {
-            if (layer is TextLayerData) {
-              _onTextLayerTap(layer);
+            if (layer.isSelected) {
+              if (layer is TextLayerData) {
+                _onTextLayerTap(layer);
+              }
+              return;
             }
+
+            Layer? newLayer;
+            _layers.forEach((layer) {
+              layer.isSelected = false;
+              if (layerItem.id == layer.id) {
+                _hasSelected = true;
+                layer.isSelected = true;
+                newLayer = _copyLayer(layer);
+              }
+            });
+
+            if (newLayer != null) {
+              addLayer(newLayer!, removeLayerIndex: i);
+            }
+
+            setState(() {});
           },
           onTapUp: () {
             setState(() {
@@ -1984,7 +2312,9 @@ class ProImageEditorState extends State<ProImageEditor> {
             widget.onUpdateUI?.call();
           },
           onTapDown: () {
-            _selectedLayer = i;
+            if (layerItem.isSelected) {
+              _selectedLayer = i;
+            }
           },
           onRemoveTap: () {
             setState(() {
@@ -2051,27 +2381,42 @@ class ProImageEditorState extends State<ProImageEditor> {
 
   Widget _buildRemoveIcon() {
     return widget.configs.customWidgets.removeLayer ??
-        Positioned(
-          top: 0,
-          left: 0,
-          child: SafeArea(
-            bottom: false,
-            child: Container(
-              height: kToolbarHeight,
-              width: kToolbarHeight,
-              decoration: BoxDecoration(
-                color: hoverRemoveBtn ? Colors.red : Colors.grey.shade800,
-                borderRadius:
-                    const BorderRadius.only(bottomRight: Radius.circular(20)),
-              ),
-              child: Center(
-                child: Icon(
-                  widget.configs.icons.removeElementZone,
-                  size: 28,
-                ),
-              ),
+        Container(
+          height: kToolbarHeight,
+          width: kToolbarHeight,
+          decoration: BoxDecoration(
+            color: hoverRemoveBtn ? Colors.red : Colors.grey.shade800,
+            borderRadius:
+                const BorderRadius.only(bottomRight: Radius.circular(20)),
+          ),
+          child: Center(
+            child: Icon(
+              widget.configs.icons.removeElementZone,
+              size: 28,
             ),
           ),
         );
+    // Positioned(
+    //   top: 0,
+    //   left: 0,
+    //   child: SafeArea(
+    //     bottom: false,
+    //     child: Container(
+    //       height: kToolbarHeight,
+    //       width: kToolbarHeight,
+    //       decoration: BoxDecoration(
+    //         color: hoverRemoveBtn ? Colors.red : Colors.grey.shade800,
+    //         borderRadius:
+    //             const BorderRadius.only(bottomRight: Radius.circular(20)),
+    //       ),
+    //       child: Center(
+    //         child: Icon(
+    //           widget.configs.icons.removeElementZone,
+    //           size: 28,
+    //         ),
+    //       ),
+    //     ),
+    //   ),
+    // );
   }
 }

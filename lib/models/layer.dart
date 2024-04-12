@@ -14,7 +14,7 @@ class Layer {
   late double rotation, scale, opacity;
 
   /// Flags to control horizontal and vertical flipping.
-  late bool flipX, flipY;
+  late bool flipX, flipY, isSelected;
 
   /// A unique identifier for the layer.
   late String id;
@@ -36,6 +36,7 @@ class Layer {
     double? scale,
     bool? flipX,
     bool? flipY,
+    bool? isSelected,
   }) {
     // Initialize properties with provided values or defaults.
     this.id = id ?? _generateUniqueId();
@@ -45,6 +46,7 @@ class Layer {
     this.scale = scale ?? 1;
     this.flipX = flipX ?? false;
     this.flipY = flipY ?? false;
+    this.isSelected = isSelected ?? false;
   }
 
   /// Generates a unique ID based on the current time.
@@ -86,6 +88,12 @@ class TextLayerData extends Layer {
   /// The text alignment within the layer.
   TextAlign align;
 
+  /// The text fontFamily within the layer.
+  String fontFamily;
+
+  /// The text fontWeight within the layer.
+  FontWeight fontWeight;
+
   /// Creates a new text layer with customizable properties.
   ///
   /// The [text] parameter specifies the text content of the layer.
@@ -103,6 +111,8 @@ class TextLayerData extends Layer {
     this.color = Colors.white,
     this.background = Colors.transparent,
     this.align = TextAlign.left,
+    this.fontFamily = "",
+    this.fontWeight = FontWeight.normal,
     super.offset,
     super.opacity,
     super.rotation,
@@ -110,6 +120,7 @@ class TextLayerData extends Layer {
     super.id,
     super.flipX,
     super.flipY,
+    super.isSelected,
   });
 }
 
@@ -145,6 +156,7 @@ class EmojiLayerData extends Layer {
     super.id,
     super.flipX,
     super.flipY,
+    super.isSelected,
   });
 }
 
@@ -187,6 +199,7 @@ class PaintingLayerData extends Layer {
     super.id,
     super.flipX,
     super.flipY,
+    super.isSelected,
   });
 
   /// Returns the size of the layer after applying the scaling factor.
