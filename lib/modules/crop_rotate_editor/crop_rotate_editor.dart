@@ -832,6 +832,7 @@ class CropRotateEditorState extends State<CropRotateEditor> {
         opacity: _inited ? 1 : 0,
         child: Hero(
           tag: !_inited ? 'block-hero' : widget.heroTag,
+          createRectTween: (begin, end) => RectTween(begin: begin, end: end),
           child: _image.hasBytes || widget.bytesWithLayers != null
               ? ExtendedImage.memory(
                   widget.bytesWithLayers ?? _image.byteArray!,

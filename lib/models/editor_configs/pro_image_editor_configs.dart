@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:pro_image_editor/models/editor_configs/sticker_editor_configs.dart';
+import 'package:pro_image_editor/models/import_export/import_state_history.dart';
 
 import '../custom_widgets.dart';
 import 'crop_rotate_editor_configs.dart';
 import 'emoji_editor_configs.dart';
 import 'filter_editor_configs.dart';
+import 'blur_editor_configs.dart';
 import 'paint_editor_configs.dart';
 import 'text_editor_configs.dart';
 import '../helper_lines.dart';
@@ -21,9 +22,6 @@ class ProImageEditorConfigs {
 
   /// A unique hero tag for the Image Editor widget.
   final String heroTag;
-
-  /// The editor currently supports only 'portraitUp' orientation. After closing the editor, it will revert to your default settings.
-  final List<DeviceOrientation> activePreferredOrientations;
 
   /// Internationalization settings for the Image Editor.
   final I18n i18n;
@@ -52,6 +50,9 @@ class ProImageEditorConfigs {
   /// Configuration options for the Filter Editor.
   final FilterEditorConfigs filterEditorConfigs;
 
+  /// Configuration options for the Blur Editor.
+  final BlurEditorConfigs blurEditorConfigs;
+
   /// Configuration options for the Emoji Editor.
   final EmojiEditorConfigs emojiEditorConfigs;
 
@@ -60,6 +61,9 @@ class ProImageEditorConfigs {
 
   /// The design mode for the Image Editor.
   final ImageEditorDesignModeE designMode;
+
+  /// Holds the initial state history of the Image Editor.
+  final ImportStateHistory? initStateHistory;
 
   /// Creates an instance of [ProImageEditorConfigs].
   /// - The `theme` specifies the theme for the Image Editor.
@@ -77,15 +81,10 @@ class ProImageEditorConfigs {
   /// - The `emojiEditorConfigs` configures the Emoji Editor. By default, it uses an empty `EmojiEditorConfigs` instance.
   /// - The `stickerEditorConfigs` configures the Sticker Editor. By default, it uses an empty `stickerEditorConfigs` instance.
   /// - The `designMode` specifies the design mode for the Image Editor. By default, it is `ImageEditorDesignMode.material`.
+  /// - The `initStateHistory` holds the initial state history of the Image Editor.
   const ProImageEditorConfigs({
     this.theme,
     this.heroTag = 'Pro-Image-Editor-Hero',
-    this.activePreferredOrientations = const [
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ],
     this.i18n = const I18n(),
     this.helperLines = const HelperLines(),
     this.customWidgets = const ImageEditorCustomWidgets(),
@@ -95,8 +94,10 @@ class ProImageEditorConfigs {
     this.textEditorConfigs = const TextEditorConfigs(),
     this.cropRotateEditorConfigs = const CropRotateEditorConfigs(),
     this.filterEditorConfigs = const FilterEditorConfigs(),
+    this.blurEditorConfigs = const BlurEditorConfigs(),
     this.emojiEditorConfigs = const EmojiEditorConfigs(),
     this.stickerEditorConfigs,
     this.designMode = ImageEditorDesignModeE.material,
+    this.initStateHistory,
   });
 }
