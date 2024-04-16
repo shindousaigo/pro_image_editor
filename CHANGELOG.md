@@ -33,3 +33,5 @@
 - Implement CropRotateEditor
 - Implement FilterEditor
 - Implement EmojiEditor
+
+## Tested
